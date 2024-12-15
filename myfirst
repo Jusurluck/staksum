@@ -1,0 +1,135 @@
+//+------------------------------------------------------------------+
+//|                                             jusurluckExperts.mq5 |
+//|                                  Copyright 2024, MetaQuotes Ltd. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2024, MetaQuotes Ltd."
+#property link      "https://www.mql5.com"
+#property version   "1.00"
+//--- input parameters
+input int      FastMAPeriod=20;
+input int      SlowMAPeriod=50;
+input double   ATRMultiplierSL=2.0;
+input double   ATRMultiplierTP=4.0;
+input double   RiskPerTrade=1.0;
+input bool     UseTrailingStop=true;
+input double   FixedLot=0.1;
+input string   TradeComment="MyTradingBot";
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+//--- create timer
+   EventSetTimer(60);
+   
+//---
+   return(INIT_SUCCEEDED);
+  }
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+//--- destroy timer
+   EventKillTimer();
+   
+  }
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+  // Step 1: Calculate Moving Averages
+double fastMA = iMA(_Symbol, PERIOD_CURRENT, FastMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+double slowMA = iMA(_Symbol, PERIOD_CURRENT, SlowMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+double prevFastMA = iMA(_Symbol, PERIOD_CURRENT, FastMAPeriod, 1, MODE_EMA, PRICE_CLOSE);
+double prevSlowMA = iMA(_Symbol, PERIOD_CURRENT, SlowMAPeriod, 1, MODE_EMA, PRICE_CLOSE);
+
+// Step 2: Calculate ATR for Stop Loss and Take Profit
+double atr = iATR(_Symbol, PERIOD_CURRENT, 14); 
+double stopLoss = atr * ATRMultiplierSL;
+double takeProfit = atr * ATRMultiplierTP;
+
+// Step 3: Heiken Ashi Candles (Trend Calculation)
+double haClose = (iClose(_Symbol, PERIOD_CURRENT, 0) + iOpen(_Symbol, PERIOD_CURRENT, 0) + 
+                  iHigh(_Symbol, PERIOD_CURRENT, 0) + iLow(_Symbol, PERIOD_CURRENT, 0)) / 4;
+double haOpen = (iOpen(_Symbol, PERIOD_CURRENT, 1) + iClose(_Symbol, PERIOD_CURRENT, 1)) / 2;
+bool haBullish = haClose > haOpen; // Bullish condition
+bool haBearish = haClose < haOpen; // Bearish condition
+
+   // Step 4: Execute Trades (Check Trade Signal and Place Orders)
+bool buySignal = (prevFastMA < prevSlowMA) && (fastMA > slowMA) && haBullish;
+bool sellSignal = (prevFastMA > prevSlowMA) && (fastMA < slowMA) && haBearish;
+
+if (buySignal)
+{
+    Print("Buy Signal Triggered");
+    OpenTrade(ORDER_TYPE_BUY, stopLoss, takeProfit);
+}
+else if (sellSignal)
+{
+    Print("Sell Signal Triggered");
+    OpenTrade(ORDER_TYPE_SELL, stopLoss, takeProfit);
+}
+  }
+   
+//+------------------------------------------------------------------+
+//| Timer function                                                   |
+//+------------------------------------------------------------------+
+void OnTimer()
+  {
+//---
+   
+  }
+//+------------------------------------------------------------------+
+//| TradeTransaction function                                        |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction& trans,
+                        const MqlTradeRequest& request,
+                        const MqlTradeResult& result)
+  {
+//---
+   
+  }
+//+------------------------------------------------------------------+
+//| Tester function                                                  |
+//+------------------------------------------------------------------+
+double OnTester()
+  {
+//---
+   double ret=0.0;
+//---
+
+//---
+   return(ret);
+  }
+//+------------------------------------------------------------------+
+//| TesterPass function                                              |
+//+------------------------------------------------------------------+
+void OnTesterPass()
+  {
+//---
+   
+  }
+void OpenTrade(ENUM_ORDER_TYPE orderType, double stopLoss, double takeProfit) 
+{ 
+   MqlTradeRequest request;
+   MqlTradeResult result;
+   ZeroMemory(request);
+
+   request.action = TRADE_ACTION_DEAL;  // Immediate order execution
+   request.type = orderType;           // Buy or Sell
+   request.symbol = _Symbol;           // Trading pair
+   request.volume = FixedLot;          // Lot size
+   request.price = (orderType == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   request.sl = (orderType == ORDER_TYPE_BUY) ? request.price - stopLoss : request.price + stopLoss;
+   request.tp = (orderType == ORDER_TYPE_BUY) ? request.price + takeProfit : request.price - takeProfit;
+   request.deviation = 10;             // Max price deviation in points
+   request.comment = TradeComment;
+
+   if (!OrderSend(request, result))    // Send the order
+      Print("OrderSend failed: ", GetLastError());
+   else
+      Print("Order placed successfully. Order ID: ", result.order);
+  }
